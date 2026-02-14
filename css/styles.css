@@ -1,0 +1,49 @@
+body
+{
+    background-color: rgb(24, 24, 24);
+    width: 800px;
+    height: auto;
+    margin: auto;
+    border-radius: 20px, 20px 0 0;
+    margin-top: 15px;
+}
+.words
+{
+    color: palevioletred;
+    font-family: cursive;
+}
+.animals
+{
+    background-color: aquamarine;
+    font-size: large;
+    font-family: fantasy;
+    color: blueviolet;
+    align-items: center;
+    border-width: 2px;
+    border-style: inset;
+    border-color: rgb(20, 190, 220);
+    transition:  transform 0.5s ease ;
+}
+.animals:hover
+{
+    background-color: lightgreen;
+    transform: scale(1.2);
+}
+#items
+{
+    align-items: center;
+    margin-left: 20%;
+}
+#elige
+{
+    color: rgb(255, 230, 5);
+}
+#mini
+{
+    font-size: 15px;
+    color: wheat;
+}
+#foot
+{
+    color: lightsalmon;
+}

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Block Blast Fix - Mascotas</title>
+    <style>
+        :root {
+            --bg-color: #121213;
+            --grid-color: #262629;
+            --block-color: #4a90e2;
+            --cell-size: 45px;
+            --gold: #ffd700;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            user-select: none;
+        }
+
+        /* UI Superior */
+        .header { display: flex; gap: 30px; align-items: center; margin-top: 20px; }
+        #score-container { font-size: 28px; color: var(--gold); font-weight: bold; }
+        #btn-shop {
+            background: #444; color: white; border: none; padding: 10px 20px;
+            border-radius: 20px; cursor: pointer; font-weight: bold;
+        }
+
+        /* Tablero y Mascota */
+        #game-layout { display: flex; align-items: center; gap: 40px; margin-top: 20px; }
+        #active-pet-display { font-size: 80px; width: 100px; height: 100px; animation: float 3s ease-in-out infinite; }
+        
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+
+        #grid {
+            display: grid; grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
+            gap: 4px; background-color: #333; padding: 8px; border-radius: 8px;
+        }
+
+        .cell { width: var(--cell-size); height: var(--cell-size); background-color: var(--grid-color); border-radius: 4px; }
+        .cell.filled { background-color: var(--block-color); box-shadow: inset 0 0 8px rgba(255,255,255,0.2); }
+        .cell.drag-over { background-color: #444; transform: scale(1.02); }
+
+        /* Piezas Inferiores */
+        #pieces-container { margin-top: 30px; display: flex; gap: 40px; height: 160px; align-items: center; }
+        .piece { display: grid; gap: 2px; cursor: grab; }
+        .piece:active { cursor: grabbing; }
+        .piece-cell { width: 30px; height: 30px; background-color: var(--block-color); border-radius: 3px; pointer-events: none; }
+        .empty-piece-cell { width: 30px; height: 30px; visibility: hidden; pointer-events: none; }
+
+        /* Estilos del Modal (Tienda) */
+        #shop-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); justify-content: center; align-items: center; z-index: 1000;
+        }
+        .shop-content { background: #222; padding: 30px; border-radius: 15px; border: 2px solid var(--gold); text-align: center; }
+        .pet-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0; }
+        .pet-card { background: #333; padding: 15px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; }
+        @keyframes shake {
+    0% { transform: translate(1px, 1px) rotate(0deg); }
+    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    30% { transform: translate(3px, 2px) rotate(0deg); }
+    50% { transform: translate(-1px, 2px) rotate(1deg); }
+    100% { transform: translate(1px, 1px) rotate(0deg); }
+}
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div id="score-container">💰 <span id="score">0</span></div>
+        <button id="btn-shop">🏪 TIENDA</button>
+        <button id="btn-clear-board" style="background: #e67e22; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold;">
+    💣 LIMPIAR TABLERO (-100 pts)
+</button>
+    </div>
+
+    <div id="game-layout">
+        <div id="active-pet-display">🥚</div>
+        <div id="grid"></div>
+    </div>
+
+    <div id="pieces-container"></div>
+
+    <div id="shop-modal">
+        <div class="shop-content">
+            <h2>Tienda de Mascotas</h2>
+            <div class="pet-grid" id="pet-shop-list"></div>
+            <button onclick="document.getElementById('shop-modal').style.display='none'">Cerrar</button>
+        </div>
+    </div>
+
+    <script>
+        const gridElement = document.getElementById('grid');
+        const piecesContainer = document.getElementById('pieces-container');
+        const scoreElement = document.getElementById('score');
+        
+        const GRID_SIZE = 8;
+        let grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+        let score = 0;
+
+        // Formas de las piezas
+        const SHAPES = [
+            [[1, 1], [1, 1]], 
+            [[1, 1, 1, 1]], 
+            [[1], [1], [1], [1]], 
+            [[1, 1, 1], [0, 1, 0]],
+            [[1, 0], [1, 0], [1, 1]],
+            [[1, 1], [0, 1], [0, 1]]
+        ];
+
+        // --- INICIO ---
+        function init() {
+            renderGrid();
+            spawnPieces();
+        }
+
+        function renderGrid() {
+            gridElement.innerHTML = '';
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = `cell ${grid[r][c] ? 'filled' : ''}`;
+                    
+                    cell.ondragover = (e) => {
+                        e.preventDefault();
+                        cell.classList.add('drag-over');
+                    };
+                    cell.ondragleave = () => cell.classList.remove('drag-over');
+                    cell.ondrop = (e) => handleDrop(e, r, c);
+                    
+                    gridElement.appendChild(cell);
+                }
+            }
+        }
+
+        function spawnPieces() {
+            piecesContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const shapeIdx = Math.floor(Math.random() * SHAPES.length);
+                const shape = SHAPES[shapeIdx];
+                
+                const pieceDiv = document.createElement('div');
+                pieceDiv.className = 'piece';
+                pieceDiv.draggable = true;
+                pieceDiv.style.gridTemplateColumns = `repeat(${shape[0].length}, 30px)`;
+
+                shape.forEach((row, r) => {
+                    row.forEach((val, c) => {
+                        const cell = document.createElement('div');
+                        cell.className = val ? 'piece-cell' : 'empty-piece-cell';
+                        pieceDiv.appendChild(cell);
+                    });
+                });
+
+                // Capturamos el punto de agarre exacto
+                pieceDiv.onmousedown = (e) => {
+                    const rect = pieceDiv.getBoundingClientRect();
+                    const offsetX = e.clientX - rect.left;
+                    const offsetY = e.clientY - rect.top;
+                    // Guardamos la celda aproximada donde el usuario hizo clic
+                    pieceDiv.dataset.grabR = Math.floor(offsetY / 32);
+                    pieceDiv.dataset.grabC = Math.floor(offsetX / 32);
+                };
+
+                pieceDiv.ondragstart = (e) => {
+                    e.dataTransfer.setData('shapeIdx', shapeIdx);
+                    pieceDiv.classList.add('dragging');
+                };
+
+                piecesContainer.appendChild(pieceDiv);
+            }
+        }
+
+        function handleDrop(e, row, col) {
+            e.preventDefault();
+            const shapeIdx = e.dataTransfer.getData('shapeIdx');
+            const draggingPiece = document.querySelector('.dragging');
+            
+            const grabR = parseInt(draggingPiece.dataset.grabR) || 0;
+            const grabC = parseInt(draggingPiece.dataset.grabC) || 0;
+            
+            const shape = SHAPES[shapeIdx];
+            const startR = row - grabR;
+            const startC = col - grabC;
+
+            if (canPlace(shape, startR, startC)) {
+                placePiece(shape, startR, startC);
+                draggingPiece.remove();
+                checkLines();
+                if (piecesContainer.children.length === 0) spawnPieces();
+            }
+            
+            renderGrid();
+            draggingPiece?.classList.remove('dragging');
+        }
+
+        function canPlace(shape, startR, startC) {
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const targetR = startR + r;
+                        const targetC = startC + c;
+                        // Validar límites y ocupación
+                        if (targetR < 0 || targetR >= GRID_SIZE || 
+                            targetC < 0 || targetC >= GRID_SIZE || 
+                            grid[targetR][targetC] === 1) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function placePiece(shape, startR, startC) {
+            shape.forEach((row, r) => {
+                row.forEach((val, c) => {
+                    if (val) grid[startR + r][startC + c] = 1;
+                });
+            });
+            score += 10;
+            updateScoreUI();
+        }
+
+        function checkLines() {
+            let rowsToClear = [];
+            let colsToClear = [];
+
+            for (let i = 0; i < GRID_SIZE; i++) {
+                if (grid[i].every(cell => cell === 1)) rowsToClear.push(i);
+                let colFull = true;
+                for (let j = 0; j < GRID_SIZE; j++) {
+                    if (grid[j][i] === 0) colFull = false;
+                }
+                if (colFull) colsToClear.push(i);
+            }
+
+            rowsToClear.forEach(r => grid[r] = Array(GRID_SIZE).fill(0));
+            colsToClear.forEach(c => {
+                for (let r = 0; r < GRID_SIZE; r++) grid[r][c] = 0;
+            });
+
+            if (rowsToClear.length > 0 || colsToClear.length > 0) {
+                score += (rowsToClear.length + colsToClear.length) * 100;
+                updateScoreUI();
+            }
+        }
+
+        function updateScoreUI() {
+            scoreElement.innerText = score;
+        }
+
+        // --- SISTEMA DE TIENDA (Simplificado para el ejemplo) ---
+        const PETS = [
+            { name: "Pio", emoji: "🐥", price: 100 },
+            { name: "Rex", emoji: "🦖", price: 500 },
+            { name: "Astronauta", emoji: "👨‍🚀", price: 1000 }
+        ];
+
+        document.getElementById('btn-shop').onclick = () => {
+            const list = document.getElementById('pet-shop-list');
+            list.innerHTML = '';
+            PETS.forEach(pet => {
+                const card = document.createElement('div');
+                card.className = 'pet-card';
+                card.innerHTML = `
+                    <div style="font-size:30px">${pet.emoji}</div>
+                    <div>${pet.name}</div>
+                    <button onclick="buyPet('${pet.emoji}', ${pet.price})" ${score < pet.price ? 'disabled' : ''}>
+                        ${pet.price} pts
+                    </button>
+                `;
+                list.appendChild(card);
+            });
+            document.getElementById('shop-modal').style.display = 'flex';
+        };
+
+        window.buyPet = (emoji, price) => {
+            if (score >= price) {
+                score -= price;
+                updateScoreUI();
+                document.getElementById('active-pet-display').innerText = emoji;
+                alert("¡Nueva mascota equipada!");
+            }
+        };
+
+        init();
+
+        document.getElementById('btn-clear-board').onclick = () => {
+    // Verificamos si tiene al menos 1 punto para que valga la pena
+    if (score <= 0) {
+        alert("¡Necesitas puntos para usar la bomba!");
+        return;
+    }
+
+    // Confirmación opcional
+    if (confirm("¿Quieres vaciar el tablero? Perderás 100 puntos (o todos si tienes menos).")) {
+        
+        // Aplicar penalización: Resta 100 o deja en 0 si tiene menos
+        score = Math.max(0, score - 100);
+        
+        // Vaciar la matriz del tablero
+        grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+        
+        // Actualizar la interfaz
+        renderGrid();
+        updateScoreUI();
+        
+        // Efecto visual simple
+        gridElement.style.animation = "shake 0.5s";
+        setTimeout(() => gridElement.style.animation = "", 500);
+    }
+};
+    </script>
+</body>
+</html>
